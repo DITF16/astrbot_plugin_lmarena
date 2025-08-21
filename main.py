@@ -35,11 +35,13 @@ class NanoBananaPlugin(Star):
         if not img_b64:
             yield event.plain_result("缺少图片参数")
             return
-        img_url = await self.generate_image(img_b64)
-        if not img_url:
+        res = await self.generate_image(img_b64)
+        if not res:
             yield event.plain_result("生成失败")
             return
-        yield event.chain_result([Image.fromURL(img_url)])
+        if not res.startswith("http"):
+            yield event.plain_result(res)
+        yield event.chain_result([Image.fromURL(res)])
 
     async def generate_image(self, img_b64: str) -> str | None:
         """
@@ -69,7 +71,7 @@ class NanoBananaPlugin(Star):
                 result = await resp.json()
                 if resp.status != 200:
                     logger.error(f"请求失败:{result}")
-                    return result["error"]["message"]
+                    return result.get("error", {}).get("message") or str(result)
 
                 result = await resp.json()
                 try:
