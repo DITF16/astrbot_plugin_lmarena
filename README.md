@@ -20,6 +20,9 @@ _✨ [astrbot](https://github.com/AstrBotDevs/AstrBot) NanoBanana插件 ✨_
 
 ## 📦 安装
 
+- 先前往 [LMarenaBridge](https://github.com/Lianues/LMarenaBridge), 安装安装好油猴脚本并启动本地服务器。
+) 
+
 - 可以直接在astrbot的插件市场搜索astrbot_plugin_nano_banana，点击安装，耐心等待安装完成即可
 - 若是安装失败，可以尝试直接克隆源码：
 
