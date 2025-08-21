@@ -66,9 +66,10 @@ class NanoBananaPlugin(Star):
 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=self.headers, json=data) as resp:
+                result = await resp.json()
                 if resp.status != 200:
-                    logger.error(f"请求失败:{await resp.text()}")
-                    return None
+                    logger.error(f"请求失败:{result}")
+                    return result["error"]["message"]
 
                 result = await resp.json()
                 try:
@@ -84,3 +85,5 @@ class NanoBananaPlugin(Star):
                 except Exception as e:
                     logger.error(f"解析图片失败:{e}")
                     return None
+
+
