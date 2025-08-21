@@ -1,0 +1,25 @@
+{
+    "base_url":{
+        "description": "URL",
+        "type": "string",
+        "default": "http://127.0.0.1:5102"
+    },
+    "prompt": {
+        "description": "手办化提示词",
+        "hint": "影响手办化的效果",
+        "type": "text",
+        "default": "Use the nano-banana model to create a 1/7 scale commercialized figure of thecharacter in the illustration, in a realistic styie and environment.Place the figure on a computer desk, using a circular transparent acrylic base without any text.On the computer screen, display the ZBrush modeling process of the figure.Next to the computer screen, a transparent board with a wooden base on which the original artwork is printed."
+    },
+    "model":{
+        "description": "生图模型",
+        "hint": "建议默认nano-banana",
+        "type": "string",
+        "default":"nano-banana"
+    },
+    "save_image":{
+        "description": "保存生成的图片",
+        "hint": "保存目录为插件数据目录",
+        "type": "bool",
+        "default":false
+    }
+}
