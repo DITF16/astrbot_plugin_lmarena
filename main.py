@@ -14,7 +14,7 @@ from .workflow import ImageWorkflow
     "astrbot_plugin_lmarena",
     "Zhalslar",
     "对接lmarena调用nano_banana等模型进行生图，如手办化",
-    "1.0.1",
+    "1.0.2",
 )
 class LMArenaPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -32,14 +32,14 @@ class LMArenaPlugin(Star):
     @filter.command("nano", alias={"手办化"})
     async def on_nano(self, event: AstrMessageEvent, prompt: str = ""):
         """调用nano_banana生图"""
-        img_b64 = await self.iwf.get_first_image_b64(event)
+        img = await self.iwf.get_first_image(event)
 
-        if not img_b64:
+        if not img:
             yield event.plain_result("缺少图片参数")
             return
 
         prompt = prompt or self.prompt
-        res = await self.iwf.generate_image(img_b64, prompt, self.model)
+        res = await self.iwf.generate_image(img, prompt, self.model)
 
         if isinstance(res, bytes):
             yield event.chain_result([Image.fromBytes(res)])

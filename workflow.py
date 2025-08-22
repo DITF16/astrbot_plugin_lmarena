@@ -16,7 +16,7 @@ class ImageWorkflow:
     """
     一个把「下载 / 压缩 / 获取头像 / 生图」串在一起的工具类
     """
-    MAX_B64_SIZE = 4_900_000  # 4.9MB
+    MAX_B64_SIZE = 4_500_000  # 4.5MB
 
     def __init__(self,base_url: str):
         """
@@ -25,7 +25,7 @@ class ImageWorkflow:
         self.base_url = base_url
         self.session = aiohttp.ClientSession()
 
-    async def _download_image(self, url: str, http: bool = True) -> Optional[bytes]:
+    async def _download_image(self, url: str, http: bool = True) -> bytes | None:
         """下载图片"""
         if http:
             url = url.replace("https://", "http://")
@@ -36,7 +36,7 @@ class ImageWorkflow:
             logger.error(f"图片下载失败: {e}")
             return None
 
-    async def _get_avatar(self, user_id: str) -> Optional[bytes]:
+    async def _get_avatar(self, user_id: str) -> bytes | None:
         """根据 QQ 号下载头像"""
         # 简单容错：如果不是纯数字就随机一个
         if not user_id.isdigit():
@@ -63,36 +63,68 @@ class ImageWorkflow:
         first_frame.save(out_io, format="PNG")
         return out_io.getvalue()
 
-    def _compress_image(self, image_io: io.BytesIO, max_size: int = 512) -> io.BytesIO:
-        """压缩静态图片到目标大小以内，GIF 不处理"""
+    def _compress_image(self, image_bytes: bytes, max_bytes: int) -> bytes:
+        """
+        压缩静态图片到指定大小以内 (按文件体积大小限制)，GIF 不处理
+        """
         try:
-            img = Image.open(image_io)
-            output = io.BytesIO()
+            img = Image.open(io.BytesIO(image_bytes))
 
+            # GIF 不处理
             if img.format == "GIF":
-                image_io.seek(0)
-                return image_io
+                return image_bytes
 
+            # 如果原始大小就已经符合要求，直接返回
+            if len(image_bytes) <= max_bytes:
+                return image_bytes
+
+            output = io.BytesIO()
             quality = 95
+
             while True:
                 output.seek(0)
                 output.truncate(0)
 
-                if img.width > max_size or img.height > max_size:
-                    img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                img.save(output, format=img.format, quality=quality, optimize=True)
 
-                img.save(output, format=img.format, quality=quality)
-                if output.tell() <= self.MAX_B64_SIZE or quality <= 30:
+                # 如果大小符合要求或质量过低，停止
+                if output.tell() <= max_bytes or quality <= 30:
                     break
                 quality -= 10
 
             output.seek(0)
-            return output
+            return output.getvalue()
+
         except Exception as e:
             raise ValueError(f"图片压缩失败: {e}")
 
 
-    async def get_first_image_b64(self, event: AstrMessageEvent) -> Optional[str]:
+    async def _load_bytes(self, src: str) -> bytes | None:
+        """统一把 src 转成 bytes"""
+        raw: Optional[bytes] = None
+
+        # 1. 本地文件
+        if Path(src).is_file():
+            raw = Path(src).read_bytes()
+
+        # 2. URL
+        elif src.startswith("http"):
+            raw = await self._download_image(src)
+
+        # 3. Base64（直接返回）
+        elif src.startswith("base64://"):
+            return base64.b64decode(src[9:])
+
+        if not raw:
+            return None
+
+        # 抽 GIF 第一帧
+        raw = self._extract_first_frame(raw)
+
+        return raw
+
+
+    async def get_first_image(self, event: AstrMessageEvent) -> bytes | None:
         """
         获取消息里的第一张图并以 Base64 字符串返回。
         顺序：
@@ -102,33 +134,6 @@ class ImageWorkflow:
         找不到返回 None。
         """
 
-        async def _load_one_b64(src: str) -> Optional[str]:
-            """统一把 src 转成 b64，太大就压缩"""
-            raw: Optional[bytes] = None
-
-            # 1. 本地文件
-            if Path(src).is_file():
-                raw = Path(src).read_bytes()
-
-            # 2. URL
-            elif src.startswith("http"):
-                raw = await self._download_image(src)
-
-            # 3. Base64（直接返回）
-            elif src.startswith("base64://"):
-                return src[9:]
-
-            if not raw:
-                return None
-
-            # 抽 GIF 第一帧
-            raw = self._extract_first_frame(raw)
-
-            if len(raw) > self.MAX_B64_SIZE:
-                raw = self._compress_image(io.BytesIO(raw)).read()
-
-            return base64.b64encode(raw).decode()
-
         # ---------- 1. 先看引用 ----------
         reply_seg = next(
             (s for s in event.get_messages() if isinstance(s, Comp.Reply)), None
@@ -136,40 +141,42 @@ class ImageWorkflow:
         if reply_seg and reply_seg.chain:
             for seg in reply_seg.chain:
                 if isinstance(seg, Comp.Image):
-                    if seg.url and (b64 := await _load_one_b64(seg.url)):
-                        return b64
-                    if seg.file and (b64 := await _load_one_b64(seg.file)):
-                        return b64
+                    if seg.url and (img := await self._load_bytes(seg.url)):
+                        return img
+                    if seg.file and (img := await self._load_bytes(seg.file)):
+                        return img
 
         # ---------- 2. 再看当前消息 ----------
         for seg in event.get_messages():
             if isinstance(seg, Comp.Image):
-                if seg.url and (b64 := await _load_one_b64(seg.url)):
-                    return b64
-                if seg.file and (b64 := await _load_one_b64(seg.file)):
-                    return b64
+                if seg.url and (img := await self._load_bytes(seg.url)):
+                    return img
+                if seg.file and (img := await self._load_bytes(seg.file)):
+                    return img
 
             elif isinstance(seg, Comp.At) and str(seg.qq) != event.get_self_id():
                 if avatar := await self._get_avatar(str(seg.qq)):
-                    return base64.b64encode(avatar).decode()
+                    return avatar
 
             elif isinstance(seg, Comp.Plain):
                 plains = seg.text.strip().split()
                 if len(plains) == 2 and plains[1].startswith("@"):
                     if avatar := await self._get_avatar(plains[1][1:]):
-                        return base64.b64encode(avatar).decode()
+                        return avatar
 
         # 兜底：发消息者自己的头像
-        if avatar := await self._get_avatar(event.get_sender_id()):
-            return base64.b64encode(avatar).decode()
+        return await self._get_avatar(event.get_sender_id())
 
-        return None
 
-    async def generate_image(self, img_b64: str, prompt: str, model:str) -> bytes|str|None:
+
+
+    async def generate_image(self, image: bytes, prompt: str, model:str) -> bytes|str|None:
         """
         发送「手办化」请求并返回图片 URL
         """
-        logger.info("开始请求手办化")
+        logger.info(f"请求生图: {prompt[:50]}...")
+        compressed_img = self._compress_image(image, self.MAX_B64_SIZE)
+        img_b64 = base64.b64encode(compressed_img).decode()
         url = f"{self.base_url}/v1/chat/completions"
         content = [
             {"type": "text", "text": prompt},

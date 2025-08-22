@@ -1,6 +1,6 @@
 {
     "base_url":{
-        "description": "URL",
+        "description": "生图服务器URL",
         "type": "string",
         "default": "http://127.0.0.1:5102"
     },
