@@ -1,12 +1,13 @@
-import aiohttp
-import re
+
+
+from datetime import datetime
 from astrbot.api.event import filter
 from astrbot import logger
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import Image
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
-from .utils import get_first_image_b64
+from .workflow import ImageWorkflow
 
 
 @register(
@@ -19,73 +20,46 @@ class NanoBananaPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.conf = config
-        self.save_path = (
-            StarTools.get_data_dir("astrbot_plugin_nano_banana") / "generated.png"
-        )
+        self.save_image = config.get("save_image", False)
+        self.plugin_data_dir = (StarTools.get_data_dir("astrbot_plugin_nano_banana"))
         self.base_url = config.get("base_url", "http://127.0.0.1:5102")
-        self.headers = {"Content-Type": "application/json"}
         self.model = config.get("model", "nano-banana")
         self.prompt = config.get("prompt", "")
-        self.save_image = config.get("save_image", False)
+
+    async def initialize(self):
+        self.iwf = ImageWorkflow(self.base_url)
+
 
     @filter.command("手办化")
     async def on_message(self, event: AstrMessageEvent):
         """(引用图片)手办化"""
-        img_b64 = await get_first_image_b64(event)
+        img_b64 = await self.iwf.get_first_image_b64(event)
+
         if not img_b64:
             yield event.plain_result("缺少图片参数")
             return
-        res = await self.generate_image(img_b64)
-        if not res:
-            yield event.plain_result("生成失败")
-            return
-        if not res.startswith("http"):
+
+        res = await self.iwf.generate_image(img_b64, self.prompt, self.model)
+
+        if isinstance(res, bytes):
+            yield event.chain_result([Image.fromBytes(res)])
+            if self.save_image:
+                save_path = (
+                    self.plugin_data_dir
+                    / f"{self.model}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
+                )
+                with save_path.open("wb") as f:
+                    f.write(res)
+
+        elif isinstance(res, str):
             yield event.plain_result(res)
-        yield event.chain_result([Image.fromURL(res)])
 
-    async def generate_image(self, img_b64: str) -> str | None:
-        """
-        发送文生图请求并保存图片
-        :param prompt: 文生图提示词
-        :param model: 模型名称
-        :param filename: 保存的文件名
-        :return: 图片文件路径，失败返回 None
-        """
-        logger.info("开始请求手办化")
-        url = f"{self.base_url}/v1/chat/completions"
-        content = [
-            {"type": "text", "text": self.prompt},
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
-            },
-        ]
-        data = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": content}],
-            "n": 1,
-        }
+        else:
+            yield event.plain_result("生成失败")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=self.headers, json=data) as resp:
-                result = await resp.json()
-                if resp.status != 200:
-                    logger.error(f"请求失败:{result}")
-                    return result.get("error", {}).get("message") or str(result)
 
-                result = await resp.json()
-                try:
-                    content = result["choices"][0]["message"]["content"]
-                    match = re.search(r"!\[.*?\]\((.*?)\)", content)
-                    if not match:
-                        logger.error("未找到图片 URL")
-                        return None
-                    image_url = match.group(1)
-                    logger.info(f"手办化图片URL: {image_url}")
-                    return image_url
-
-                except Exception as e:
-                    logger.error(f"解析图片失败:{e}")
-                    return None
-
+    async def terminate(self):
+        if self.iwf:
+            await self.iwf.terminate()
+            logger.info("[ImageWorkflow] session已关闭")
 
