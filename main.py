@@ -38,7 +38,7 @@ class LMArenaPlugin(Star):
             yield event.plain_result("缺少图片参数")
             return
 
-        prompt = prompt or self.prompt
+        prompt = prompt if (prompt and not prompt.startswith("@")) else self.prompt
         res = await self.iwf.generate_image(img, prompt, self.model)
 
         if isinstance(res, bytes):
