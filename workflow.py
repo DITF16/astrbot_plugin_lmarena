@@ -4,21 +4,19 @@ import base64
 import random
 from pathlib import Path
 from typing import Optional
-
 import aiohttp
 from PIL import Image
-
 from astrbot.api import logger
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 import astrbot.core.message.components as Comp
+
 
 class ImageWorkflow:
     """
     一个把「下载 / 压缩 / 获取头像 / 生图」串在一起的工具类
     """
-    MAX_B64_SIZE = 4_500_000  # 4.5MB
 
-    def __init__(self,base_url: str):
+    def __init__(self, base_url: str):
         """
         :param base_url: API 的 base url
         """
@@ -74,30 +72,46 @@ class ImageWorkflow:
             if img.format == "GIF":
                 return image_bytes
 
-            # 如果原始大小就已经符合要求，直接返回
+            # 原图已满足
             if len(image_bytes) <= max_bytes:
                 return image_bytes
 
+            # 兼容 Pillow 新旧版本
+            try:
+                resample = Image.LANCZOS # type: ignore
+            except AttributeError:
+                resample = Image.ANTIALIAS  # type: ignore
+
             output = io.BytesIO()
             quality = 95
+            scale = 1.0
 
             while True:
                 output.seek(0)
                 output.truncate(0)
 
-                img.save(output, format=img.format, quality=quality, optimize=True)
+                if scale < 1:
+                    w, h = img.size
+                    tmp = img.resize((int(w * scale), int(h * scale)), resample)
+                else:
+                    tmp = img
 
-                # 如果大小符合要求或质量过低，停止
-                if output.tell() <= max_bytes or quality <= 30:
+                tmp.save(output, format=img.format, quality=quality, optimize=True)
+
+                if output.tell() <= max_bytes or (quality <= 30 and scale <= 0.2):
                     break
-                quality -= 10
+
+                if quality > 30:
+                    quality -= 10
+                else:
+                    scale *= 0.9
+                logger.debug(f"图片质量调整为 {quality}, 缩放调整为 {scale}")
 
             output.seek(0)
             return output.getvalue()
 
         except Exception as e:
             raise ValueError(f"图片压缩失败: {e}")
-
 
     async def _load_bytes(self, src: str) -> bytes | None:
         """统一把 src 转成 bytes"""
@@ -122,7 +136,6 @@ class ImageWorkflow:
         raw = self._extract_first_frame(raw)
 
         return raw
-
 
     async def get_first_image(self, event: AstrMessageEvent) -> bytes | None:
         """
@@ -167,15 +180,14 @@ class ImageWorkflow:
         # 兜底：发消息者自己的头像
         return await self._get_avatar(event.get_sender_id())
 
-
-
-
-    async def generate_image(self, image: bytes, prompt: str, model:str) -> bytes|str|None:
+    async def generate_image(
+        self, image: bytes, prompt: str, model: str
+    ) -> bytes | str | None:
         """
         发送「手办化」请求并返回图片 URL
         """
         logger.info(f"请求生图: {prompt[:50]}...")
-        compressed_img = self._compress_image(image, self.MAX_B64_SIZE)
+        compressed_img = self._compress_image(image, 3500000)
         img_b64 = base64.b64encode(compressed_img).decode()
         url = f"{self.base_url}/v1/chat/completions"
         content = [
