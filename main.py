@@ -21,7 +21,7 @@ class LMArenaPlugin(Star):
         super().__init__(context)
         self.conf = config
         self.save_image = config.get("save_image", False)
-        self.plugin_data_dir = (StarTools.get_data_dir("astrbot_plugin_nano_banana"))
+        self.plugin_data_dir = StarTools.get_data_dir("astrbot_plugin_lmarena")
         self.base_url = config.get("base_url", "http://127.0.0.1:5102")
         self.model = config.get("model", "nano-banana")
         self.prompt = config.get("prompt", "")
