@@ -12,9 +12,6 @@ from astrbot.api import logger
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 import astrbot.core.message.components as Comp
 
-
-
-
 class ImageWorkflow:
     """
     一个把「下载 / 压缩 / 获取头像 / 生图」串在一起的工具类
@@ -53,6 +50,18 @@ class ImageWorkflow:
         except Exception as e:
             logger.error(f"下载头像失败: {e}")
             return None
+
+    def _extract_first_frame(self, raw: bytes) -> bytes:
+        """把 GIF 的第一帧抽出来，返回 PNG/JPEG 字节流"""
+        img_io = io.BytesIO(raw)
+        img = Image.open(img_io)
+        if img.format != "GIF":
+            return raw  # 不是 GIF，原样返回
+        logger.info("检测到GIF, 将抽取 GIF 的第一帧来生图")
+        first_frame = img.convert("RGBA")
+        out_io = io.BytesIO()
+        first_frame.save(out_io, format="PNG")
+        return out_io.getvalue()
 
     def _compress_image(self, image_io: io.BytesIO, max_size: int = 512) -> io.BytesIO:
         """压缩静态图片到目标大小以内，GIF 不处理"""
@@ -111,6 +120,9 @@ class ImageWorkflow:
 
             if not raw:
                 return None
+
+            # 抽 GIF 第一帧
+            raw = self._extract_first_frame(raw)
 
             if len(raw) > self.MAX_B64_SIZE:
                 raw = self._compress_image(io.BytesIO(raw)).read()

@@ -11,12 +11,12 @@ from .workflow import ImageWorkflow
 
 
 @register(
-    "astrbot_plugin_nano_banana",
+    "astrbot_plugin_lmarena",
     "Zhalslar",
-    "对接nano_banana将图片手办化",
-    "1.0.0",
+    "对接lmarena调用nano_banana等模型进行生图，如手办化",
+    "1.0.1",
 )
-class NanoBananaPlugin(Star):
+class LMArenaPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.conf = config
@@ -29,17 +29,17 @@ class NanoBananaPlugin(Star):
     async def initialize(self):
         self.iwf = ImageWorkflow(self.base_url)
 
-
-    @filter.command("手办化")
-    async def on_message(self, event: AstrMessageEvent):
-        """(引用图片)手办化"""
+    @filter.command("nano", alias={"手办化"})
+    async def on_nano(self, event: AstrMessageEvent, prompt: str = ""):
+        """调用nano_banana生图"""
         img_b64 = await self.iwf.get_first_image_b64(event)
 
         if not img_b64:
             yield event.plain_result("缺少图片参数")
             return
 
-        res = await self.iwf.generate_image(img_b64, self.prompt, self.model)
+        prompt = prompt or self.prompt
+        res = await self.iwf.generate_image(img_b64, prompt, self.model)
 
         if isinstance(res, bytes):
             yield event.chain_result([Image.fromBytes(res)])
@@ -56,7 +56,6 @@ class NanoBananaPlugin(Star):
 
         else:
             yield event.plain_result("生成失败")
-
 
     async def terminate(self):
         if self.iwf:
