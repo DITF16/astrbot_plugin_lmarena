@@ -1,5 +1,3 @@
-
-
 from datetime import datetime
 from astrbot.api.event import filter
 from astrbot import logger
@@ -29,7 +27,7 @@ class LMArenaPlugin(Star):
     async def initialize(self):
         self.iwf = ImageWorkflow(self.base_url)
 
-    @filter.command("nano", alias={"手办化"}, priority=3)
+    @filter.command("bnn", alias={"手办化", "nano"}, priority=3)
     async def on_nano(self, event: AstrMessageEvent, prompt: str = ""):
         """调用nano_banana生图"""
         img = await self.iwf.get_first_image(event)
@@ -61,4 +59,3 @@ class LMArenaPlugin(Star):
         if self.iwf:
             await self.iwf.terminate()
             logger.info("[ImageWorkflow] session已关闭")
-
