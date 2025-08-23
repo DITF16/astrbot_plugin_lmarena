@@ -29,7 +29,7 @@ class LMArenaPlugin(Star):
     async def initialize(self):
         self.iwf = ImageWorkflow(self.base_url)
 
-    @filter.command("nano", alias={"手办化"})
+    @filter.command("nano", alias={"手办化"}, priority=3)
     async def on_nano(self, event: AstrMessageEvent, prompt: str = ""):
         """调用nano_banana生图"""
         img = await self.iwf.get_first_image(event)
