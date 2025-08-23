@@ -1,3 +1,4 @@
+import asyncio
 import io
 import re
 import base64
@@ -61,57 +62,63 @@ class ImageWorkflow:
         first_frame.save(out_io, format="PNG")
         return out_io.getvalue()
 
-    def _compress_image(self, image_bytes: bytes, max_bytes: int) -> bytes:
+    async def _compress_image(self, image_bytes: bytes, max_bytes: int) -> bytes:
         """
-        压缩静态图片到指定大小以内 (按文件体积大小限制)，GIF 不处理
+        线程池里压缩静态图片到指定大小以内，GIF 不处理
         """
-        try:
-            img = Image.open(io.BytesIO(image_bytes))
+        loop = asyncio.get_running_loop()
 
-            # GIF 不处理
-            if img.format == "GIF":
-                return image_bytes
-
-            # 原图已满足
-            if len(image_bytes) <= max_bytes:
-                return image_bytes
-
-            # 兼容 Pillow 新旧版本
+        def _inner(image_bytes: bytes, max_bytes: int) -> bytes:
             try:
-                resample = Image.LANCZOS # type: ignore
-            except AttributeError:
-                resample = Image.ANTIALIAS  # type: ignore
+                img = Image.open(io.BytesIO(image_bytes))
 
-            output = io.BytesIO()
-            quality = 95
-            scale = 1.0
+                # GIF 不处理
+                if img.format == "GIF":
+                    return image_bytes
 
-            while True:
-                output.seek(0)
-                output.truncate(0)
+                if len(image_bytes) <= max_bytes:
+                    return image_bytes
 
-                if scale < 1:
-                    w, h = img.size
-                    tmp = img.resize((int(w * scale), int(h * scale)), resample)
-                else:
-                    tmp = img
+                # 2) 先把长边一次性缩到 512 以下，质量先压到 50
+                img.thumbnail((512, 512), Image.LANCZOS)  # type: ignore
+                resampled = io.BytesIO()
+                img.save(resampled, format=img.format, quality=50, optimize=True)
+                resampled.seek(0)
+                if resampled.tell() <= max_bytes:
+                    return resampled.getvalue()
 
-                tmp.save(output, format=img.format, quality=quality, optimize=True)
+                # 3) 还不够小，再进入原有循环微调
+                quality, scale = 45, 0.6
+                resample = Image.LANCZOS  # type: ignore
 
-                if output.tell() <= max_bytes or (quality <= 30 and scale <= 0.2):
-                    break
+                while True:
+                    resampled.seek(0)
+                    resampled.truncate(0)
 
-                if quality > 30:
-                    quality -= 10
-                else:
-                    scale *= 0.9
-                logger.debug(f"图片质量调整为 {quality}, 缩放调整为 {scale}")
+                    if scale < 1:
+                        w, h = img.size
+                        tmp = img.resize((int(w * scale), int(h * scale)), resample)
+                    else:
+                        tmp = img
 
-            output.seek(0)
-            return output.getvalue()
+                    tmp.save(
+                        resampled, format=img.format, quality=quality, optimize=True
+                    )
 
-        except Exception as e:
-            raise ValueError(f"图片压缩失败: {e}")
+                    if resampled.tell() <= max_bytes or (quality <= 5 and scale <= 0.2):
+                        break
+
+                    if quality > 5:
+                        quality -= 5
+                    else:
+                        scale *= 0.9
+
+                return resampled.getvalue()
+
+            except Exception as e:
+                raise ValueError(f"图片压缩失败: {e}")
+
+        return await loop.run_in_executor(None, _inner, image_bytes, max_bytes)
 
     async def _load_bytes(self, src: str) -> bytes | None:
         """统一把 src 转成 bytes"""
@@ -187,7 +194,7 @@ class ImageWorkflow:
         发送「手办化」请求并返回图片 URL
         """
         logger.info(f"请求生图: {prompt[:50]}...")
-        compressed_img = self._compress_image(image, 3500000)
+        compressed_img = await self._compress_image(image, 3500000)
         img_b64 = base64.b64encode(compressed_img).decode()
         url = f"{self.base_url}/v1/chat/completions"
         content = [
@@ -218,7 +225,7 @@ class ImageWorkflow:
                     logger.error("未找到图片 URL")
                     return None
                 image_url = match.group(1)
-                logger.info(f"手办化图片 URL: {image_url}")
+                logger.info(f"返回图片 URL: {image_url}")
                 img = await self._download_image(image_url, http=False)
                 return img
             except Exception as e:

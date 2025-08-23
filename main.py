@@ -14,7 +14,7 @@ from .workflow import ImageWorkflow
     "astrbot_plugin_lmarena",
     "Zhalslar",
     "对接lmarena调用nano_banana等模型进行生图，如手办化",
-    "1.0.2",
+    "1.0.3",
 )
 class LMArenaPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
