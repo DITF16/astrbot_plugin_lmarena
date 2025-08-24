@@ -207,26 +207,28 @@ class ImageWorkflow:
         data = {"model": model, "messages": [{"role": "user", "content": content}], "n": 1}
         headers = {"Content-Type": "application/json"}
 
-        last_error = None  # 记录最后一次的错误信息
+        error_msg = None  # 记录最后一次的错误信息
         for attempt in range(retries + 1):
             logger.info(f"请求生图(第 {attempt + 1} 次): {prompt[:50]}...")
             try:
                 async with self.session.post(url, headers=headers, json=data) as resp:
                     result = await resp.json()
                     if resp.status != 200:
-                        last_error = result.get("error", {}).get("message") or str(result)
-                        raise ValueError(last_error)  # 触发重试
+                        error_msg = result.get("error", {}).get("message") or str(result)
+                        raise ValueError(error_msg)  # 触发重试
 
                     # HTTP 200，尝试解析图片 URL
                     content_msg = result["choices"][0]["message"]["content"]
                     match = re.search(r"!\[.*?\]\((.*?)\)", content_msg)
                     if not match:
+                        error_msg = "url not found"
                         raise ValueError("url not found")  # 触发重试
 
                     img_url = match.group(1)
                     logger.info(f"返回图片 URL: {img_url}")
                     img = await self._download_image(img_url, http=False)
                     if not img:
+                        error_msg = "图片下载失败"
                         raise ValueError("图片下载失败")  # 触发重试
                     return img
 
@@ -237,7 +239,7 @@ class ImageWorkflow:
                 # 最后一次循环继续，不会提前 return
 
         # 走到这里说明所有重试机会已用完
-        return last_error or "unknown error"
+        return error_msg or "unknown error"
 
 
     async def terminate(self):
