@@ -1,14 +1,14 @@
 {
+    "prefix":{
+        "description": "启用触发前缀",
+        "hint": "启用后需要前缀或者@bot来触发命令",
+        "type": "bool",
+        "default": "!img"
+    },
     "base_url":{
         "description": "生图服务器URL",
         "type": "string",
         "default": "http://127.0.0.1:5102"
-    },
-    "prompt": {
-        "description": "手办化提示词",
-        "hint": "影响手办化的效果",
-        "type": "text",
-        "default": "Use the nano-banana model to create a 1/7 scale commercialized figure of thecharacter in the illustration, in a realistic styie and environment.Place the figure on a computer desk, using a circular transparent acrylic base without any text.On the computer screen, display the ZBrush modeling process of the figure.Next to the computer screen, a transparent board with a wooden base on which the original artwork is printed."
     },
     "model":{
         "description": "生图模型",
@@ -21,5 +21,17 @@
         "hint": "保存目录为插件数据目录",
         "type": "bool",
         "default":false
+    },
+    "retries":{
+        "description":"生图失败重试次数",
+        "hint": "最后一次重试仍失败时，将返回错误",
+        "type": "int",
+        "default": 2
+    },
+    "prompt": {
+        "description": "生图触发词与提示词",
+        "hint": "影响手办化的效果，请前往data/plugins/astrbot_plugin_lmarena/prompt.py更改, 格式为 触发词:提示词",
+        "type": "string",
+        "default": "请前往data/plugins/astrbot_plugin_lmarena/prompt.py更改"
     }
 }

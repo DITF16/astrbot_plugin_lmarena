@@ -6,13 +6,13 @@ from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import Image
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 from .workflow import ImageWorkflow
-
+from .prompt import prompt_map
 
 @register(
     "astrbot_plugin_lmarena",
     "Zhalslar",
     "对接lmarena调用nano_banana等模型进行生图，如手办化",
-    "1.0.3",
+    "1.0.4",
 )
 class LMArenaPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -20,31 +20,42 @@ class LMArenaPlugin(Star):
         self.conf = config
         self.save_image = config.get("save_image", False)
         self.plugin_data_dir = StarTools.get_data_dir("astrbot_plugin_lmarena")
-        self.base_url = config.get("base_url", "http://127.0.0.1:5102")
-        self.model = config.get("model", "nano-banana")
-        self.prompt = config.get("prompt", "")
 
     async def initialize(self):
-        self.iwf = ImageWorkflow(self.base_url)
+        self.iwf = ImageWorkflow(self.conf["base_url"])
 
-    @filter.command("bnn", alias={"手办化", "nano"}, priority=3)
-    async def on_nano(self, event: AstrMessageEvent, prompt: str = ""):
-        """调用nano_banana生图"""
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=3)
+    async def on_lmarena(self, event: AstrMessageEvent):
+        """调用lmarena生图"""
+        if self.conf["prefix"] and not event.is_at_or_wake_command:
+            return
+
+        cmd, _, prompt = event.message_str.partition(" ")
+        if cmd not in prompt_map:
+            return
+
+        if not prompt or prompt.startswith("@"):
+            prompt = prompt_map[cmd]
+
         img = await self.iwf.get_first_image(event)
 
         if not img:
             yield event.plain_result("缺少图片参数")
             return
 
-        prompt = prompt if (prompt and not prompt.startswith("@")) else self.prompt
-        res = await self.iwf.generate_image(img, prompt, self.model)
+        res = await self.iwf.generate_image(
+            image=img,
+            prompt=prompt,
+            model=self.conf["model"],
+            retries=self.conf["retries"],
+        )
 
         if isinstance(res, bytes):
             yield event.chain_result([Image.fromBytes(res)])
-            if self.save_image:
+            if self.conf["save_image"]:
                 save_path = (
                     self.plugin_data_dir
-                    / f"{self.model}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
+                    / f"{self.conf['model']}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
                 )
                 with save_path.open("wb") as f:
                     f.write(res)

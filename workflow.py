@@ -79,16 +79,16 @@ class ImageWorkflow:
                 if len(image_bytes) <= max_bytes:
                     return image_bytes
 
-                # 2) 先把长边一次性缩到 512 以下，质量先压到 50
-                img.thumbnail((512, 512), Image.LANCZOS)  # type: ignore
+                # 2) 先把长边一次性缩到 1024 以下，质量先压到 70
+                img.thumbnail((1024, 1024), Image.LANCZOS)  # type: ignore
                 resampled = io.BytesIO()
-                img.save(resampled, format=img.format, quality=50, optimize=True)
+                img.save(resampled, format=img.format, quality=70, optimize=True)
                 resampled.seek(0)
                 if resampled.tell() <= max_bytes:
                     return resampled.getvalue()
 
                 # 3) 还不够小，再进入原有循环微调
-                quality, scale = 45, 0.6
+                quality, scale = 50, 0.6
                 resample = Image.LANCZOS  # type: ignore
 
                 while True:
@@ -188,13 +188,13 @@ class ImageWorkflow:
         return await self._get_avatar(event.get_sender_id())
 
     async def generate_image(
-        self, image: bytes, prompt: str, model: str
+        self, image: bytes, prompt: str, model: str, retries: int = 3
     ) -> bytes | str | None:
         """
-        发送「手办化」请求并返回图片 URL
+        发送「手办化」请求并返回图片 bytes；
+        HTTP 非 200 时重试 retries 次，最后一次仍失败则返回错误字符串。
         """
-        logger.info(f"请求生图: {prompt[:50]}...")
-        compressed_img = await self._compress_image(image, 3500000)
+        compressed_img = await self._compress_image(image, 3_500_000)
         img_b64 = base64.b64encode(compressed_img).decode()
         url = f"{self.base_url}/v1/chat/completions"
         content = [
@@ -204,33 +204,41 @@ class ImageWorkflow:
                 "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
             },
         ]
-        data = {
-            "model": model,
-            "messages": [{"role": "user", "content": content}],
-            "n": 1,
-        }
+        data = {"model": model, "messages": [{"role": "user", "content": content}], "n": 1}
         headers = {"Content-Type": "application/json"}
 
-        async with self.session.post(url, headers=headers, json=data) as resp:
-            result = await resp.json()
-            if resp.status != 200:
-                logger.error(f"请求失败: {result}")
-                message = result.get("error", {}).get("message") or str(result)
-                return message
-
+        last_error = None  # 记录最后一次的错误信息
+        for attempt in range(retries + 1):
+            logger.info(f"请求生图(第 {attempt + 1} 次): {prompt[:50]}...")
             try:
-                content = result["choices"][0]["message"]["content"]
-                match = re.search(r"!\[.*?\]\((.*?)\)", content)
-                if not match:
-                    logger.error("未找到图片 URL")
-                    return None
-                image_url = match.group(1)
-                logger.info(f"返回图片 URL: {image_url}")
-                img = await self._download_image(image_url, http=False)
-                return img
+                async with self.session.post(url, headers=headers, json=data) as resp:
+                    result = await resp.json()
+                    if resp.status != 200:
+                        last_error = result.get("error", {}).get("message") or str(result)
+                        raise ValueError(last_error)  # 触发重试
+
+                    # HTTP 200，尝试解析图片 URL
+                    content_msg = result["choices"][0]["message"]["content"]
+                    match = re.search(r"!\[.*?\]\((.*?)\)", content_msg)
+                    if not match:
+                        raise ValueError("url not found")  # 触发重试
+
+                    img_url = match.group(1)
+                    logger.info(f"返回图片 URL: {img_url}")
+                    img = await self._download_image(img_url, http=False)
+                    if not img:
+                        raise ValueError("图片下载失败")  # 触发重试
+                    return img
+
             except Exception as e:
-                logger.error(f"解析图片失败: {e}")
-                return None
+                logger.error(f"第 {attempt + 1} 次失败: {e}")
+                if attempt < retries:
+                    await asyncio.sleep(2**attempt)
+                # 最后一次循环继续，不会提前 return
+
+        # 走到这里说明所有重试机会已用完
+        return last_error or "unknown error"
+
 
     async def terminate(self):
         if self.session:
