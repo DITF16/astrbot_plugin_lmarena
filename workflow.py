@@ -221,8 +221,8 @@ class ImageWorkflow:
                     content_msg = result["choices"][0]["message"]["content"]
                     match = re.search(r"!\[.*?\]\((.*?)\)", content_msg)
                     if not match:
-                        error_msg = "url not found"
-                        raise ValueError("url not found")  # 触发重试
+                        error_msg = "响应为空"
+                        raise ValueError("响应为空")  # 触发重试
 
                     img_url = match.group(1)
                     logger.info(f"返回图片 URL: {img_url}")
