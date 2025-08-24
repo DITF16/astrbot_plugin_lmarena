@@ -1,29 +1,29 @@
 {
-    "prefix":{
+    "prefix": {
         "description": "启用触发前缀",
         "hint": "启用后需要前缀或者@bot来触发命令",
         "type": "bool",
-        "default": "!img"
+        "default": true
     },
-    "base_url":{
+    "base_url": {
         "description": "生图服务器URL",
         "type": "string",
         "default": "http://127.0.0.1:5102"
     },
-    "model":{
+    "model": {
         "description": "生图模型",
         "hint": "建议默认nano-banana",
         "type": "string",
-        "default":"nano-banana"
+        "default": "nano-banana"
     },
-    "save_image":{
+    "save_image": {
         "description": "保存生成的图片",
         "hint": "保存目录为插件数据目录",
         "type": "bool",
-        "default":false
+        "default": false
     },
-    "retries":{
-        "description":"生图失败重试次数",
+    "retries": {
+        "description": "生图失败重试次数",
         "hint": "最后一次重试仍失败时，将返回错误",
         "type": "int",
         "default": 2
