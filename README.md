@@ -21,12 +21,14 @@ _✨ [astrbot](https://github.com/AstrBotDevs/AstrBot) LMArena插件 ✨_
 ## 📦 安装
 
 ### 安装LMarenaBridge
+
 - 前往 [LMarenaBridge](https://github.com/Lianues/LMarenaBridge)按教程安装,
 - 确保该服务器在 <http://127.0.0.1:5102> 启动
 - 确保油猴脚本已成功连接到本地服务器
 - 确保以battle模式启动，用的是nano_banana模型。
   
 ### 安装本插件
+
 - 直接在astrbot的插件市场搜索astrbot_plugin_lmarena，点击安装
 
 ## ⌨️ 使用说明
@@ -35,8 +37,10 @@ _✨ [astrbot](https://github.com/AstrBotDevs/AstrBot) LMArena插件 ✨_
 
 |     命令      |                    说明                    |
 |:-------------:|:-----------------------------------------------:|
-| (引用图片)/手办化  or  手办化@群友    | 将图片或头像手办化处理  |
-| (引用图片)/nano 描述词 | 将图片按照描述词进行处理         |
+| (引用图片)/手办化  | 将图片进行手办化  |
+|  手办化@群友  or 手办化 @QQ号 | 将群友头像或者QQ号主的头像进行手办化  |
+| (引用图片)/bnn 描述词 | 将图片按照描述词进行处理         |
+| (自定义触发词，如 手办化2) | 请前往data/plugins/astrbot_plugin_lmarena/prompt.py更改，格式为 触发词:提示词        |
 
 ### 示例图
 
