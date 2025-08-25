@@ -17,12 +17,17 @@ class ImageWorkflow:
     一个把「下载 / 压缩 / 获取头像 / 生图」串在一起的工具类
     """
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, model: str):
         """
         :param base_url: API 的 base url
+        :param model: 模型名称
         """
         self.base_url = base_url
         self.session = aiohttp.ClientSession()
+        self.current_model = model
+
+    async def set_model(self, model: str):
+        self.current_model = model
 
     async def _download_image(self, url: str, http: bool = True) -> bytes | None:
         """下载图片"""
@@ -187,60 +192,80 @@ class ImageWorkflow:
         # 兜底：发消息者自己的头像
         return await self._get_avatar(event.get_sender_id())
 
-    async def generate_image(
-        self, image: bytes, prompt: str, model: str, retries: int = 3
+
+    async def get_llm_response(
+        self, text: str, image: bytes | None = None, retries: int = 3
     ) -> bytes | str | None:
         """
-        发送「手办化」请求并返回图片 bytes；
-        HTTP 非 200 时重试 retries 次，最后一次仍失败则返回错误字符串。
+        向LLM发出请求，获取内容
         """
-        compressed_img = await self._compress_image(image, 3_500_000)
-        img_b64 = base64.b64encode(compressed_img).decode()
+        content: list[dict] = [{"type": "text", "text": text}]
+        if image:
+            compressed_img = await self._compress_image(image, 3_500_000)
+            img_b64 = base64.b64encode(compressed_img).decode()
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                }
+            )
+
         url = f"{self.base_url}/v1/chat/completions"
-        content = [
-            {"type": "text", "text": prompt},
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
-            },
-        ]
-        data = {"model": model, "messages": [{"role": "user", "content": content}], "n": 1}
+
+        data = {"model": self.current_model, "messages": [{"role": "user", "content": content}], "n": 1}
         headers = {"Content-Type": "application/json"}
 
         error_msg = None  # 记录最后一次的错误信息
         for attempt in range(retries + 1):
-            logger.info(f"请求生图(第 {attempt + 1} 次): {prompt[:50]}...")
+            logger.info(f"请求{self.current_model}第{attempt + 1}次: {text[:50]}...")
             try:
                 async with self.session.post(url, headers=headers, json=data) as resp:
                     result = await resp.json()
+                    logger.debug(result)
                     if resp.status != 200:
                         error_msg = result.get("error", {}).get("message") or str(result)
-                        raise ValueError(error_msg)  # 触发重试
+                        raise ValueError(error_msg)
 
-                    # HTTP 200，尝试解析图片 URL
                     content_msg = result["choices"][0]["message"]["content"]
-                    match = re.search(r"!\[.*?\]\((.*?)\)", content_msg)
-                    if not match:
+                    if not content_msg:
                         error_msg = "响应为空"
-                        raise ValueError("响应为空")  # 触发重试
-
-                    img_url = match.group(1)
-                    logger.info(f"返回图片 URL: {img_url}")
-                    img = await self._download_image(img_url, http=False)
-                    if not img:
-                        error_msg = "图片下载失败"
-                        raise ValueError("图片下载失败")  # 触发重试
-                    return img
+                        raise ValueError("响应为空")
+                    # 解析图片
+                    if url_match := re.search(r"!\[.*?\]\((.*?)\)", content_msg):
+                        img_url = url_match.group(1)
+                        logger.info(f"返回图片 URL: {img_url}")
+                        img = await self._download_image(img_url, http=False)
+                        if not img:
+                            error_msg = "图片下载失败"
+                            raise ValueError("图片下载失败")
+                        return img
+                    # 返回文本
+                    else:
+                        return content_msg
 
             except Exception as e:
                 logger.error(f"第 {attempt + 1} 次失败: {e}")
                 if attempt < retries:
                     await asyncio.sleep(2**attempt)
-                # 最后一次循环继续，不会提前 return
 
-        # 走到这里说明所有重试机会已用完
         return error_msg or "unknown error"
 
+    async def get_models(self) -> list[str] | None:
+        """
+        获取 OpenAI 兼容的模型列表，该列表从 models.json 文件中读取。
+        """
+        url = f"{self.base_url}/v1/models"
+        headers = {"Content-Type": "application/json"}
+        async with self.session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                ids = [m["id"] for m in data["data"]]
+                self.models = ids
+                return ids
+            else:
+                logger.error(f"请求失败，状态码：{resp.status}")
+                text = await resp.text()
+                raise RuntimeError(text)
 
     async def terminate(self):
         if self.session:
