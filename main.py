@@ -32,10 +32,12 @@ class LMArenaPlugin(Star):
             return
 
         cmd, _, text = event.message_str.partition(" ")
+        img = None
         if cmd == "lm":
-            img = None
+            text = text.strip()
         elif cmd in prompt_map:
             img = await self.iwf.get_first_image(event)
+            logger.info(f"[ImageWorkflow] prompt: {text}")
             if not text or text.startswith("@"):
                 text = prompt_map[cmd]
         else:

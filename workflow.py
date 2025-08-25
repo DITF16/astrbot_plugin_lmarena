@@ -203,7 +203,12 @@ class ImageWorkflow:
         if image:
             compressed_img = await self._compress_image(image, 3_500_000)
             img_b64 = base64.b64encode(compressed_img).decode()
-            content.append({"type": "image_url", "image_url": {"url": img_b64}})
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                }
+            )
 
         url = f"{self.base_url}/v1/chat/completions"
 
