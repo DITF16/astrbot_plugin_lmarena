@@ -8,6 +8,7 @@ from astrbot.core.platform.astr_message_event import AstrMessageEvent
 from .workflow import ImageWorkflow
 from .prompt import prompt_map
 
+
 @register(
     "astrbot_plugin_lmarena",
     "Zhalslar",
@@ -22,31 +23,27 @@ class LMArenaPlugin(Star):
         self.plugin_data_dir = StarTools.get_data_dir("astrbot_plugin_lmarena")
 
     async def initialize(self):
-        self.iwf = ImageWorkflow(self.conf["base_url"])
+        self.iwf = ImageWorkflow(self.conf["base_url"], self.conf["model"])
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=3)
     async def on_lmarena(self, event: AstrMessageEvent):
-        """调用lmarena生图"""
+        """/lm+文字 | 手办化+图片"""
         if self.conf["prefix"] and not event.is_at_or_wake_command:
             return
 
-        cmd, _, prompt = event.message_str.partition(" ")
-        if cmd not in prompt_map:
+        cmd, _, text = event.message_str.partition(" ")
+        if cmd == "lm":
+            img = None
+        elif cmd in prompt_map:
+            img = await self.iwf.get_first_image(event)
+            if not text or text.startswith("@"):
+                text = prompt_map[cmd]
+        else:
             return
 
-        if not prompt or prompt.startswith("@"):
-            prompt = prompt_map[cmd]
-
-        img = await self.iwf.get_first_image(event)
-
-        if not img:
-            yield event.plain_result("缺少图片参数")
-            return
-
-        res = await self.iwf.generate_image(
+        res = await self.iwf.get_llm_response(
+            text=text,
             image=img,
-            prompt=prompt,
-            model=self.conf["model"],
             retries=self.conf["retries"],
         )
 
@@ -65,6 +62,23 @@ class LMArenaPlugin(Star):
 
         else:
             yield event.plain_result("生成失败")
+
+    @filter.command("models")
+    async def models(self, event: AstrMessageEvent, index: int = 0):
+        "查看模型列表，切换模型"
+        ids = await self.iwf.get_models()
+        if not ids:
+            yield event.plain_result("模型列表为空")
+            return
+        if 0 < index <= len(ids):
+            sel_model = ids[index - 1]
+            yield event.plain_result(f"已选择模型：{sel_model}")
+            await self.iwf.set_model(sel_model)
+            self.conf["model"] = sel_model
+            self.conf.save_config()
+        else:
+            msg = "\n".join(f"{i + 1}. {m}" for i, m in enumerate(ids))
+            yield event.plain_result(msg)
 
     async def terminate(self):
         if self.iwf:
