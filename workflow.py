@@ -216,13 +216,13 @@ class ImageWorkflow:
             try:
                 async with self.session.post(url, headers=headers, json=data) as resp:
                     result = await resp.json()
-                    print(result)
+                    logger.debug(result)
                     if resp.status != 200:
                         error_msg = result.get("error", {}).get("message") or str(result)
                         raise ValueError(error_msg)
 
-                    content_msg:str = result["choices"][0]["message"]["content"]
-                    if not content_msg.strip():
+                    content_msg = result["choices"][0]["message"]["content"]
+                    if not content_msg:
                         error_msg = "响应为空"
                         raise ValueError("响应为空")
                     # 解析图片
